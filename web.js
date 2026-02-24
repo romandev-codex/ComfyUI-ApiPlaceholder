@@ -48,11 +48,26 @@ app.registerExtension({
                             if (Object.keys(connections).length > 0) {
                                 for (const [indexStr, connectionData] of Object.entries(connections)) {
                                     const index = parseInt(indexStr);
+
+                                    // Check if the referenced node ID still exists in the graph
+                                    let nodeNotFound = false;
+                                    if (connectionData.target) {
+                                        const parts = connectionData.target.split('.');
+                                        const targetNodeId = parseInt(parts[0]);
+                                        if (!isNaN(targetNodeId) && app.graph && !app.graph.getNodeById(targetNodeId)) {
+                                            nodeNotFound = true;
+                                            console.warn(`🟡 [ApiPlaceholder] Node ID ${targetNodeId} not found in graph (target: ${connectionData.target})`);
+                                        }
+                                    }
+
+                                    const resolvedTarget = nodeNotFound
+                                        ? `${connectionData.target} [ERROR-ID]`
+                                        : connectionData.target;
                                     
                                     // Update widget label and value
                                     if (this.widgets && this.widgets[index]) {
                                         if (connectionData.target) {
-                                            this.widgets[index].label = connectionData.target;
+                                            this.widgets[index].label = resolvedTarget;
                                         }
                                         if (connectionData.placeholder) {
                                             this.widgets[index].value = connectionData.placeholder;
@@ -62,11 +77,11 @@ app.registerExtension({
                                     // Update output label
                                     if (this.outputs && this.outputs[index]) {
                                         const outputLabel = connectionData.placeholder && connectionData.target 
-                                            ? `${connectionData.placeholder} → ${connectionData.target}`
-                                            : connectionData.target || this.outputs[index].label;
+                                            ? `${connectionData.placeholder} → ${resolvedTarget}`
+                                            : resolvedTarget || this.outputs[index].label;
                                         this.outputs[index].label = outputLabel;
                                         if (connectionData.target) {
-                                            this.outputs[index].name = connectionData.target;
+                                            this.outputs[index].name = resolvedTarget;
                                         }
                                     }
                                 }
