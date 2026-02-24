@@ -48,26 +48,11 @@ app.registerExtension({
                             if (Object.keys(connections).length > 0) {
                                 for (const [indexStr, connectionData] of Object.entries(connections)) {
                                     const index = parseInt(indexStr);
-
-                                    // Check if the referenced node ID still exists in the graph
-                                    let nodeNotFound = false;
-                                    if (connectionData.target) {
-                                        const parts = connectionData.target.split('.');
-                                        const targetNodeId = parseInt(parts[0]);
-                                        if (!isNaN(targetNodeId) && app.graph && !app.graph.getNodeById(targetNodeId)) {
-                                            nodeNotFound = true;
-                                            console.warn(`🟡 [ApiPlaceholder] Node ID ${targetNodeId} not found in graph (target: ${connectionData.target})`);
-                                        }
-                                    }
-
-                                    const resolvedTarget = nodeNotFound
-                                        ? `${connectionData.target} [ERROR-ID]`
-                                        : connectionData.target;
                                     
                                     // Update widget label and value
                                     if (this.widgets && this.widgets[index]) {
                                         if (connectionData.target) {
-                                            this.widgets[index].label = resolvedTarget;
+                                            this.widgets[index].label = connectionData.target;
                                         }
                                         if (connectionData.placeholder) {
                                             this.widgets[index].value = connectionData.placeholder;
@@ -77,11 +62,11 @@ app.registerExtension({
                                     // Update output label
                                     if (this.outputs && this.outputs[index]) {
                                         const outputLabel = connectionData.placeholder && connectionData.target 
-                                            ? `${connectionData.placeholder} → ${resolvedTarget}`
-                                            : resolvedTarget || this.outputs[index].label;
+                                            ? `${connectionData.placeholder} → ${connectionData.target}`
+                                            : connectionData.target || this.outputs[index].label;
                                         this.outputs[index].label = outputLabel;
                                         if (connectionData.target) {
-                                            this.outputs[index].name = resolvedTarget;
+                                            this.outputs[index].name = connectionData.target;
                                         }
                                     }
                                 }
@@ -94,6 +79,79 @@ app.registerExtension({
                         } catch (e) {
                             console.error("🔴 [ApiPlaceholder] Failed to parse connections JSON:", e);
                         }
+                    }
+                };
+
+                // Helper to draw dashed virtual links to remembered targets
+                this.drawVirtualConnections = function(ctx) {
+                    if (!ctx || !app?.graph) {
+                        return;
+                    }
+
+                    for (let outputIndex = 0; outputIndex < 20; outputIndex++) {
+                        const widget = this.widgets?.[outputIndex];
+                        const output = this.outputs?.[outputIndex];
+                        if (!widget || !output || !widget.label) {
+                            continue;
+                        }
+
+                        const labelMatch = /^(\d+)\.(.+)$/.exec(widget.label);
+                        if (!labelMatch) {
+                            continue;
+                        }
+
+                        const targetNodeId = Number(labelMatch[1]);
+                        const targetInputName = labelMatch[2];
+                        const targetNode = app.graph._nodes_by_id?.[targetNodeId];
+                        if (!targetNode || !targetNode.inputs) {
+                            continue;
+                        }
+
+                        let targetInputIndex = -1;
+                        for (let i = 0; i < targetNode.inputs.length; i++) {
+                            if (targetNode.inputs[i]?.name === targetInputName) {
+                                targetInputIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (targetInputIndex < 0) {
+                            continue;
+                        }
+
+                        const from = this.getConnectionPos(false, outputIndex);
+                        const to = targetNode.getConnectionPos(true, targetInputIndex);
+                        if (!from || !to) {
+                            continue;
+                        }
+
+                        // onDrawForeground is rendered in this node's local coordinates,
+                        // while getConnectionPos returns graph-space coordinates.
+                        const localFromX = from[0] - this.pos[0];
+                        const localFromY = from[1] - this.pos[1];
+                        const localToX = to[0] - this.pos[0];
+                        const localToY = to[1] - this.pos[1];
+
+                        const linkColor = output.linkcolor || output.color || "#99A";
+                        const dx = Math.max(40, Math.abs(localToX - localFromX) * 0.35);
+
+                        ctx.save();
+                        ctx.strokeStyle = linkColor;
+                        ctx.globalAlpha = 0.75;
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([8, 6]);
+                        ctx.beginPath();
+                        ctx.moveTo(localFromX, localFromY);
+                        ctx.bezierCurveTo(
+                            localFromX + dx,
+                            localFromY,
+                            localToX - dx,
+                            localToY,
+                            localToX,
+                            localToY
+                        );
+                        ctx.stroke();
+                        ctx.restore();
                     }
                 };
                                 
@@ -230,6 +288,18 @@ app.registerExtension({
                     });
                 }
                 
+                return result;
+            };
+
+            // Draw dashed virtual links for remembered targets
+            const onDrawForeground = nodeType.prototype.onDrawForeground;
+            nodeType.prototype.onDrawForeground = function(ctx) {
+                const result = onDrawForeground ? onDrawForeground.apply(this, arguments) : undefined;
+
+                if (this.drawVirtualConnections) {
+                    this.drawVirtualConnections(ctx);
+                }
+
                 return result;
             };
         }
