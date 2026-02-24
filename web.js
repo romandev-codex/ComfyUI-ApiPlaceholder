@@ -88,6 +88,22 @@ app.registerExtension({
                         return;
                     }
 
+                    if (!this._virtualLineColors) {
+                        this._virtualLineColors = {};
+                    }
+
+                    if (!this.getVirtualLineColor) {
+                        this.getVirtualLineColor = function(connectionKey) {
+                            if (!this._virtualLineColors[connectionKey]) {
+                                const hue = Math.floor(Math.random() * 360);
+                                const saturation = 70 + Math.floor(Math.random() * 20);
+                                const lightness = 55 + Math.floor(Math.random() * 10);
+                                this._virtualLineColors[connectionKey] = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                            }
+                            return this._virtualLineColors[connectionKey];
+                        };
+                    }
+
                     for (let outputIndex = 0; outputIndex < 20; outputIndex++) {
                         const widget = this.widgets?.[outputIndex];
                         const output = this.outputs?.[outputIndex];
@@ -132,7 +148,8 @@ app.registerExtension({
                         const localToX = to[0] - this.pos[0];
                         const localToY = to[1] - this.pos[1];
 
-                        const linkColor = output.linkcolor || output.color || "#99A";
+                        const connectionKey = `${outputIndex}:${widget.label}`;
+                        const linkColor = this.getVirtualLineColor(connectionKey) || output.linkcolor || output.color || "#99A";
                         const dx = Math.max(40, Math.abs(localToX - localFromX) * 0.35);
 
                         ctx.save();
